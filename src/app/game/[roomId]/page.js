@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Bomb, Flag, RefreshCw } from 'lucide-react';
 import io from 'socket.io-client'
+import { useRouter } from 'next/navigation';
 
 export default function GameRoom() {
   const GRID_SIZE_X = 30;
@@ -43,6 +44,8 @@ export default function GameRoom() {
 
   // Add near the top of the component
   const [roomId, setRoomId] = useState(null)
+
+  const router = useRouter();
 
   useEffect(() => {
     if (!grid) return;
@@ -391,6 +394,14 @@ export default function GameRoom() {
     );
   };
 
+  const handleReset = () => {
+    // Extract current room ID from URL and increment it
+    const pathSegments = window.location.pathname.split('/');
+    const currentRoomId = parseInt(pathSegments[pathSegments.length - 1]);
+    const nextRoomId = currentRoomId + 1;
+    router.push(`/game/${nextRoomId}`);
+  };
+
   return (
     <Card className="p-4 w-fit">
       <div className="mb-4 flex justify-between items-center">
@@ -407,7 +418,7 @@ export default function GameRoom() {
           ) : (
             <Button
               variant="outline"
-              onClick={() => window.location.reload()}
+              onClick={handleReset}
               className="flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />

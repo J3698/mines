@@ -12,7 +12,7 @@ const ioHandler = (req, res) => {
 
       socket.on('joinGame', (roomId) => {
         socket.join(roomId)
-        
+ 
         if (!gameRooms.has(roomId)) {
           gameRooms.set(roomId, {
             activeGame: null,
