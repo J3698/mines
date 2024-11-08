@@ -146,6 +146,18 @@ const generateNewGame = () => {
     }
   }
   
+  // Reveal three random safe cells
+  let cellsRevealed = 0;
+  while (cellsRevealed < 5) {
+    const x = Math.floor(Math.random() * GRID_SIZE_X);
+    const y = Math.floor(Math.random() * GRID_SIZE_Y);
+ 
+    if (!grid[y][x].isMine && !grid[y][x].isRevealed) {
+      grid[y][x].isRevealed = true;
+      cellsRevealed++;
+    }
+  }
+  
   return grid;
 };
 
