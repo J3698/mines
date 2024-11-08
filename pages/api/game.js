@@ -5,88 +5,93 @@ const ioHandler = (req, res) => {
     const io = new Server(res.socket.server)
     res.socket.server.io = io
 
-    let activeGame = null
-    let playerCount = 0
-    let playerStates = {
-      player1: null,
-      player2: null
-    }
+    const gameRooms = new Map()
 
     io.on('connection', (socket) => {
       console.log('Client connected')
 
-      socket.on('joinGame', () => {
-        playerCount++
-        const playerId = `player${playerCount}`
-        socket.playerId = playerId
-        console.log(`${playerId} joined. Total players: ${playerCount}`)
+      socket.on('joinGame', (roomId) => {
+        socket.join(roomId)
+        
+        if (!gameRooms.has(roomId)) {
+          gameRooms.set(roomId, {
+            activeGame: null,
+            playerCount: 0,
+            playerStates: {
+              player1: null,
+              player2: null
+            }
+          })
+        }
 
-        if (playerCount === 1) {
-          activeGame = generateNewGame()
-          playerStates.player1 = new Set()
-          socket.emit('setBoard', activeGame)
+        const room = gameRooms.get(roomId)
+        room.playerCount++
+        const playerId = `player${room.playerCount}`
+        socket.playerId = playerId
+        console.log(`${playerId} joined room ${roomId}. Total players: ${room.playerCount}`)
+
+        if (room.playerCount === 1) {
+          room.activeGame = generateNewGame()
+          room.playerStates.player1 = new Set()
+          socket.emit('setBoard', room.activeGame)
           socket.emit('setPlayerId', playerId)
-          socket.emit('setPlayerStates', playerStates)
-          io.emit('gameReady', false)
-        } else if (playerCount === 2) {
-          playerStates.player2 = new Set()
-          socket.emit('setBoard', activeGame)
+          socket.emit('setPlayerStates', room.playerStates)
+          io.to(roomId).emit('gameReady', false)
+        } else if (room.playerCount === 2) {
+          room.playerStates.player2 = new Set()
+          socket.emit('setBoard', room.activeGame)
           socket.emit('setPlayerId', playerId)
-          socket.emit('setPlayerStates', playerStates)
-          io.emit('gameReady', true)
-          io.emit('updatePlayerStates', playerStates)
-          console.log('Game is ready')
+          socket.emit('setPlayerStates', room.playerStates)
+          io.to(roomId).emit('gameReady', true)
+          io.to(roomId).emit('updatePlayerStates', room.playerStates)
+          console.log('Game is ready in room', roomId)
         }
       })
 
-      socket.on('makeMove', (move) => {
-        if (playerCount === 2 && activeGame) {
+      socket.on('makeMove', ({ roomId, ...move }) => {
+        const room = gameRooms.get(roomId)
+        if (room && room.playerCount === 2 && room.activeGame) {
           const { type, x, y, revealedCells } = move
           const playerId = socket.playerId
 
           console.log('Received move:', move)
           if (type === 'reveal' && Array.isArray(revealedCells)) {
-            if (!playerStates[playerId]) {
-              playerStates[playerId] = new Set();
+            if (!room.playerStates[playerId]) {
+              room.playerStates[playerId] = new Set();
             }
 
             revealedCells.forEach(coord => {
-              playerStates[playerId].add(coord);
+              room.playerStates[playerId].add(coord);
             });
 
-            io.emit('setPlayerStates', {
-              player1: playerStates.player1 ? Array.from(playerStates.player1) : [],
-              player2: playerStates.player2 ? Array.from(playerStates.player2) : []
+            io.to(roomId).emit('setPlayerStates', {
+              player1: room.playerStates.player1 ? Array.from(room.playerStates.player1) : [],
+              player2: room.playerStates.player2 ? Array.from(room.playerStates.player2) : []
             });
           }
         }
       })
 
       socket.on('disconnect', () => {
-        if (socket.playerId) {
-          playerStates[socket.playerId] = null
-        }
-        playerCount = Math.max(0, playerCount - 1)
-        console.log(`Client disconnected. Players remaining: ${playerCount}`)
-
-        if (playerCount === 0) {
-          activeGame = null
-          playerStates = {
-            player1: null,
-            player2: null
+        socket.rooms.forEach(roomId => {
+          const room = gameRooms.get(roomId)
+          if (room) {
+            if (socket.playerId) {
+              room.playerStates[socket.playerId] = null
+            }
+            room.playerCount = Math.max(0, room.playerCount - 1)
+            
+            if (room.playerCount === 0) {
+              gameRooms.delete(roomId)
+            }
           }
-        }
+        })
       })
 
-      socket.on('gameOver', ({ winner, wonByClear }) => {
-        if (activeGame) {
-          io.emit('gameOver', { winner, wonByClear });
-          activeGame = null;
-          playerCount = 0;
-          playerStates = {
-            player1: null,
-            player2: null
-          };
+      socket.on('gameOver', ({ roomId, winner, wonByClear }) => {
+        if (gameRooms.has(roomId)) {
+          io.to(roomId).emit('gameOver', { winner, wonByClear });
+          gameRooms.delete(roomId)
         }
       });
     })
