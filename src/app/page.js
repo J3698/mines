@@ -11,23 +11,12 @@ const Home = () => {
   const GRID_SIZE_Y = 16;
   const MINES_COUNT = 99;
   
-  // Move the function definition before its usage
-  const generateEmptyGrid = () => {
-    return Array(GRID_SIZE_Y).fill().map(() => 
-      Array(GRID_SIZE_X).fill().map(() => ({
-        isMine: false,
-        isRevealed: false,
-        isFlagged: false,
-        neighborMines: 0
-      }))
-    )
-  }
-
-  const [grid, setGrid] = useState(generateEmptyGrid());
+  const [grid, setGrid] = useState(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [flagsLeft, setFlagsLeft] = useState(MINES_COUNT);
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [isGameReady, setIsGameReady] = useState(false);
   const socketRef = useRef()
 
   // Add a connected state
@@ -52,67 +41,48 @@ const Home = () => {
   // Add a new state for the player who won by revealing all cells
   const [clearWinner, setClearWinner] = useState(null);
 
-  // Initialize grid with empty state instead of null
-  const initializeGrid = () => {
-    // Create empty grid with different dimensions
-    let newGrid = Array(GRID_SIZE_Y).fill().map(() => 
-      Array(GRID_SIZE_X).fill().map(() => ({
-        isMine: false,
-        isRevealed: false,
-        isFlagged: false,
-        neighborMines: 0
-      }))
-    );
-    
-    // Place mines randomly
-    let minesPlaced = 0;
-    while (minesPlaced < MINES_COUNT) {
-      const x = Math.floor(Math.random() * GRID_SIZE_X);
-      const y = Math.floor(Math.random() * GRID_SIZE_Y);
-      
-      if (!newGrid[y][x].isMine) {
-        newGrid[y][x].isMine = true;
-        minesPlaced++;
-      }
-    }
-    
-    // Calculate neighbor mines
+  useEffect(() => {
+    if (!grid) return;
+    let won = true;
     for (let y = 0; y < GRID_SIZE_Y; y++) {
       for (let x = 0; x < GRID_SIZE_X; x++) {
-        if (!newGrid[y][x].isMine) {
-          let count = 0;
-          // Check all 8 neighbors
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const ny = y + dy;
-              const nx = x + dx;
-              if (ny >= 0 && ny < GRID_SIZE_Y && nx >= 0 && nx < GRID_SIZE_X) {
-                if (newGrid[ny][nx].isMine) count++;
-              }
-            }
-          }
-          newGrid[y][x].neighborMines = count;
+        if (!grid[y][x].isMine && !grid[y][x].isRevealed) {
+          won = false;
+          break;
         }
       }
+      if (!won) break;
     }
-    
-    setGrid(newGrid);
-    setGameOver(false);
-    setGameWon(false);
-    setFlagsLeft(MINES_COUNT);
-  };
-  
+ 
+    if (won) {
+      if (!winner) {
+      setGameWon(true);
+      setClearWinner(playerId);
+      }
+    }
+    if (!won) {
+      console.log('game not won')
+    } else {
+      console.log('game won')
+      socketRef.current?.emit('gameOver', { 
+        winner: playerId, 
+        wonByClear: true 
+      });
+    }
+  }, [grid, winner])
+
   // Reveal cell and its neighbors if it's empty
   const revealCell = (y, x, revealedCells = new Set()) => {
     if (!grid[y][x].isRevealed && !grid[y][x].isFlagged) {
       const newGrid = [...grid];
       newGrid[y][x].isRevealed = true;
       revealedCells.add(`${x},${y}`);
-      
+
       if (grid[y][x].isMine) {
         setGameOver(true);
-        // The player who hit the mine is the loser
-        socketRef.current?.emit('gameOver', { winner: playerId });
+        // Send the OTHER player as the winner
+        const winner = playerId === 'player1' ? 'player2' : 'player1';
+        socketRef.current?.emit('gameOver', { winner });
         // Reveal all mines
         for (let i = 0; i < GRID_SIZE_Y; i++) {
           for (let j = 0; j < GRID_SIZE_X; j++) {
@@ -137,7 +107,6 @@ const Home = () => {
       }
       
       setGrid(newGrid);
-      checkWinCondition();
     }
     return revealedCells;
   };
@@ -187,16 +156,27 @@ const Home = () => {
     
     // If flagged neighbors match the cell's number, reveal unflagged neighbors
     if (flaggedCount === grid[y][x].neighborMines) {
+      const allRevealedCells = new Set();
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const ny = y + dy;
           const nx = x + dx;
           if (ny >= 0 && ny < GRID_SIZE_Y && nx >= 0 && nx < GRID_SIZE_X) {
             if (!grid[ny][nx].isFlagged) {
-              revealCell(ny, nx);
+              const revealedCells = revealCell(ny, nx, new Set());
+              revealedCells.forEach(cell => allRevealedCells.add(cell));
             }
           }
         }
+      }
+      // Emit makeMove event with all revealed cells
+      if (allRevealedCells.size > 0 && socketRef.current) {
+        socketRef.current.emit('makeMove', {
+          type: 'reveal',
+          x,
+          y,
+          revealedCells: Array.from(allRevealedCells)
+        });
       }
     }
   };
@@ -233,24 +213,16 @@ const Home = () => {
   };
   
   // Check win condition
-  const checkWinCondition = () => {
-    let won = true;
-    for (let y = 0; y < GRID_SIZE_Y; y++) {
-      for (let x = 0; x < GRID_SIZE_X; x++) {
-        if (!grid[y][x].isMine && !grid[y][x].isRevealed) {
-          won = false;
-          break;
-        }
-      }
-      if (!won) break;
+  useEffect(() => {
+    if (gameOver) {
+      // Reveal all cells when game is over
+      const newGrid = grid.map(row => row.map(cell => ({
+        ...cell,
+        isRevealed: true
+      })));
+      setGrid(newGrid);
     }
-    
-    if (won) {
-      setGameWon(true);
-      setClearWinner(playerId);
-    }
-    return won;
-  };
+  }, [gameOver])
   
   // Initialize game on first render
   useEffect(() => {
@@ -260,38 +232,38 @@ const Home = () => {
         socketRef.current = io()
 
         socketRef.current.on('connect', () => {
-          console.log('Connected to server')
           setIsConnected(true)
         })
 
-        socketRef.current.on('gameState', ({ board, playerId, playerStates }) => {
-          console.log('Received game state:', board)
+        // Split gameState into separate event handlers
+        socketRef.current.once('setBoard', (board) => {
           if (board && Array.isArray(board)) {
-            console.log('Received game state:', board)
             setGrid(board)
-            setPlayerId(playerId)
-            setPlayerStates(playerStates)
           }
         })
 
-        socketRef.current.on('updatePlayerStates', (newPlayerStates) => {
-          console.log('Received player states:', newPlayerStates); // Debug log
-          setPlayerStates({
-            player1: new Set(newPlayerStates.player1 ? Array.from(newPlayerStates.player1) : []),
-            player2: new Set(newPlayerStates.player2 ? Array.from(newPlayerStates.player2) : [])
-          });
-        });
+        socketRef.current.once('setPlayerId', (id) => {
+          setPlayerId(id)
+        })
 
-        // Add handler for game ready state
+        socketRef.current.on('setPlayerStates', (states) => {
+          console.log('setPlayerStates', states)
+          setPlayerStates({
+            player1: new Set(states.player1 ? Array.from(states.player1) : []),
+            player2: new Set(states.player2 ? Array.from(states.player2) : [])
+          })
+        })
+
         socketRef.current.on('gameReady', (ready) => {
           setWaitingForPlayer(!ready);
           if (ready) {
-            // Start countdown from 3
+            // Start countdown from 3`
             setCountdown(3);
             const timer = setInterval(() => {
               setCountdown(prev => {
                 if (prev <= 1) {
                   clearInterval(timer);
+                  setIsGameReady(true);
                   return null;
                 }
                 return prev - 1;
@@ -300,25 +272,7 @@ const Home = () => {
           }
         });
 
-        socketRef.current.on('updateGame', (move) => {
-          const { type, x, y } = move
-          if (type === 'reveal') {
-            const revealedCells = revealCell(y, x)
-            // Check if this move resulted in a win for either player
-            const won = checkWinCondition();
-            if (won) {
-              socketRef.current?.emit('gameOver', { 
-                winner: playerId, 
-                wonByClear: true 
-              });
-            }
-          } else if (type === 'flag') {
-            toggleFlag(y, x)
-          }
-        })
-
         socketRef.current.on('gameOver', ({ winner, wonByClear }) => {
-          console.log('Game Over:', { winner, wonByClear }); // Add debug logging
           setGameOver(true);
           setWinner(winner);
           if (wonByClear) {
@@ -326,12 +280,6 @@ const Home = () => {
           } else {
             setClearWinner(null);
           }
-          // Reveal all cells when game is over
-          const newGrid = grid.map(row => row.map(cell => ({
-            ...cell,
-            isRevealed: true
-          })));
-          setGrid(newGrid);
         });
       } catch (error) {
         console.error('Socket initialization error:', error)
@@ -384,15 +332,15 @@ const Home = () => {
 
     // Helper function to determine the game over message
     const getGameOverMessage = () => {
-      console.log('Game Over State:', { clearWinner, winner, playerId }); // Add debug logging
+      console.log('Game Over State:', { clearWinner, winner, playerId });
       if (clearWinner) {
         return clearWinner === playerId 
           ? "Game Over - You won by clearing all cells!" 
           : "Game Over - Your opponent won by clearing all cells!";
       } else if (winner === playerId) {
-        return "Game Over - You hit a mine!";
-      } else if (winner) {
         return "Game Over - You won! Opponent hit a mine!";
+      } else if (winner) {
+        return "Game Over - You hit a mine!";
       }
       return "";
     };
@@ -415,7 +363,7 @@ const Home = () => {
         {gameOver && (
           <div className="text-center mt-2 font-bold">
             <span className={
-              (clearWinner === playerId || (winner && winner !== playerId)) 
+              (winner === playerId) 
                 ? "text-green-600" 
                 : "text-red-600"
             }>
@@ -470,8 +418,9 @@ const Home = () => {
         )}
       </div>
       
-      <div className="grid gap-px bg-gray-200 p-px">
-        {grid.map((row, y) => (
+      {(grid && isGameReady) ? (
+        <div className="grid gap-px bg-gray-200 p-px">
+          {grid.map((row, y) => (
           <div key={y} className="flex gap-px">
             {row.map((cell, x) => (
               <button
@@ -505,7 +454,8 @@ const Home = () => {
             ))}
           </div>
         ))}
-      </div>
+        </div>
+      ) : <div className="w-[500px]">No Game In Progress...</div>}
       <ScoreBoard />
     </Card>
   );

@@ -24,11 +24,15 @@ const ioHandler = (req, res) => {
         if (playerCount === 1) {
           activeGame = generateNewGame()
           playerStates.player1 = new Set()
-          socket.emit('gameState', { board: activeGame, playerId, playerStates })
+          socket.emit('setBoard', activeGame)
+          socket.emit('setPlayerId', playerId)
+          socket.emit('setPlayerStates', playerStates)
           io.emit('gameReady', false)
         } else if (playerCount === 2) {
           playerStates.player2 = new Set()
-          socket.emit('gameState', { board: activeGame, playerId, playerStates })
+          socket.emit('setBoard', activeGame)
+          socket.emit('setPlayerId', playerId)
+          socket.emit('setPlayerStates', playerStates)
           io.emit('gameReady', true)
           io.emit('updatePlayerStates', playerStates)
           console.log('Game is ready')
@@ -50,15 +54,10 @@ const ioHandler = (req, res) => {
               playerStates[playerId].add(coord);
             });
 
-            const serializedStates = {
+            io.emit('setPlayerStates', {
               player1: playerStates.player1 ? Array.from(playerStates.player1) : [],
               player2: playerStates.player2 ? Array.from(playerStates.player2) : []
-            };
-            
-            io.emit('updateGame', { type, x, y });
-            io.emit('updatePlayerStates', serializedStates);
-          } else if (type === 'flag') {
-            io.emit('updateGame', { type, x, y });
+            });
           }
         }
       })
