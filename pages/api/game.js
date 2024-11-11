@@ -49,12 +49,15 @@ const ioHandler = (req, res) => {
       })
 
       socket.on('makeMove', ({ roomId, ...move }) => {
+        //console.log('gameRooms', gameRooms)
         const room = gameRooms.get(roomId)
+        //console.log('roomId', roomId)
+        //console.log('Received move:', move.revealedCells.length)
+        //console.log(room, room.playerCount, room.activeGame, move.type)
         if (room && room.playerCount === 2 && room.activeGame) {
           const { type, x, y, revealedCells } = move
           const playerId = socket.playerId
 
-          console.log('Received move:', move)
           if (type === 'reveal' && Array.isArray(revealedCells)) {
             if (!room.playerStates[playerId]) {
               room.playerStates[playerId] = new Set();
@@ -64,6 +67,7 @@ const ioHandler = (req, res) => {
               room.playerStates[playerId].add(coord);
             });
 
+            console.log('updating lens', room.playerStates[playerId].size)
             io.to(roomId).emit('setPlayerStates', {
               player1: room.playerStates.player1 ? Array.from(room.playerStates.player1) : [],
               player2: room.playerStates.player2 ? Array.from(room.playerStates.player2) : []
@@ -145,7 +149,7 @@ const generateNewGame = () => {
       }
     }
   }
-  
+
   // Reveal three random safe cells
   let cellsRevealed = 0;
   while (cellsRevealed < 5) {

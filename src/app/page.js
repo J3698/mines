@@ -7,8 +7,8 @@ export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
-    // Generate a random room ID
-    const randomRoomId = Math.random().toString(36).substring(2, 8)
+    // Generate a random 6-digit room ID
+    const randomRoomId = Math.floor(100000 + Math.random() * 900000)
     router.push(`/game/${randomRoomId}`)
   }, [])
 

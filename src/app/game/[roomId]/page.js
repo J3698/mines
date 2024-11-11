@@ -71,6 +71,7 @@ export default function GameRoom() {
     } else {
       console.log('game won')
       socketRef.current?.emit('gameOver', { 
+        roomId,
         winner: playerId, 
         wonByClear: true 
       });
@@ -88,7 +89,7 @@ export default function GameRoom() {
         setGameOver(true);
         // Send the OTHER player as the winner
         const winner = playerId === 'player1' ? 'player2' : 'player1';
-        socketRef.current?.emit('gameOver', { winner });
+        socketRef.current?.emit('gameOver', { roomId, winner });
         // Reveal all mines
         for (let i = 0; i < GRID_SIZE_Y; i++) {
           for (let j = 0; j < GRID_SIZE_X; j++) {
@@ -139,7 +140,7 @@ export default function GameRoom() {
   const handleContextMenu = (e, y, x) => {
     e.preventDefault(); // Prevent context menu from showing
     if (!gameOver && !gameWon && isConnected && socketRef.current && countdown === null) {
-      socketRef.current.emit('makeMove', { type: 'flag', x, y })
+      socketRef.current.emit('makeMove', { type: 'flag', x, y, roomId })
       toggleFlag(y, x)
     }
   };
@@ -181,7 +182,8 @@ export default function GameRoom() {
           type: 'reveal',
           x,
           y,
-          revealedCells: Array.from(allRevealedCells)
+          revealedCells: Array.from(allRevealedCells),
+          roomId
         });
       }
     }
@@ -236,75 +238,76 @@ export default function GameRoom() {
     const initializeSocket = async () => {
       try {
         await fetch('/api/game')
-        socketRef.current = io()
-
-        // Get room ID from URL path more reliably
-        const pathSegments = window.location.pathname.split('/')
-        const currentRoomId = pathSegments[pathSegments.length - 1]
-        
-        // Validate room ID
-        if (!currentRoomId) {
-          console.error('Invalid room ID')
-          return
-        }
-
-        setRoomId(currentRoomId)
-        
-        socketRef.current.on('connect', () => {
-          setIsConnected(true)
-        })
-
-        // Split gameState into separate event handlers
-        socketRef.current.once('setBoard', (board) => {
-          if (board && Array.isArray(board)) {
-            setGrid(board)
-          }
-        })
-
-        socketRef.current.once('setPlayerId', (id) => {
-          setPlayerId(id)
-        })
-
-        socketRef.current.on('setPlayerStates', (states) => {
-          console.log('setPlayerStates', states)
-          setPlayerStates({
-            player1: new Set(states.player1 ? Array.from(states.player1) : []),
-            player2: new Set(states.player2 ? Array.from(states.player2) : [])
+        // Only create socket if it doesn't exist
+        if (!socketRef.current) {
+          socketRef.current = io()
+          
+          console.log('socket created')
+          socketRef.current.on('connect', () => {
+            setIsConnected(true)
+            // Get room ID from URL path
+            const pathSegments = window.location.pathname.split('/')
+            const currentRoomId = pathSegments[pathSegments.length - 1]
+            setRoomId(currentRoomId)
+            
+            console.log('joining game', currentRoomId)
+            socketRef.current.emit('joinGame', currentRoomId)
           })
-        })
 
-        socketRef.current.on('gameReady', (ready) => {
-          setWaitingForPlayer(!ready);
-          if (ready) {
-            // Start countdown from 3`
-            setCountdown(3);
-            const timer = setInterval(() => {
-              setCountdown(prev => {
-                if (prev <= 1) {
-                  clearInterval(timer);
-                  setIsGameReady(true);
-                  return null;
-                }
-                return prev - 1;
-              });
-            }, 1000);
-          }
-        });
+          // Move all socket event handlers here
+          socketRef.current.once('setBoard', (board) => {
+            if (board && Array.isArray(board)) {
+              setGrid(board)
+            }
+          })
 
-        socketRef.current.on('gameOver', ({ winner, wonByClear }) => {
-          setGameOver(true);
-          setWinner(winner);
-          if (wonByClear) {
-            setClearWinner(winner);
-          } else {
-            setClearWinner(null);
-          }
-        });
+          socketRef.current.once('setPlayerId', (id) => {
+            setPlayerId(id)
+          })
+
+          socketRef.current.on('setPlayerStates', (states) => {
+            console.log('setting player states', states)
+            setPlayerStates({
+              player1: new Set(states.player1 ? Array.from(states.player1) : []),
+              player2: new Set(states.player2 ? Array.from(states.player2) : [])
+            })
+          })
+
+          socketRef.current.on('gameReady', (ready) => {
+            setWaitingForPlayer(!ready);
+            if (ready) {
+              // Start countdown from 3`
+              setCountdown(3);
+              const timer = setInterval(() => {
+                setCountdown(prev => {
+                  if (prev <= 1) {
+                    clearInterval(timer);
+                    setIsGameReady(true);
+                    return null;
+                  }
+                  return prev - 1;
+                });
+              }, 1000);
+            }
+          });
+
+          socketRef.current.on('gameOver', ({ winner, wonByClear }) => {
+            console.log('game over', winner, wonByClear)
+            setGameOver(true);
+            setWinner(winner);
+            if (wonByClear) {
+              setClearWinner(winner);
+            } else {
+              setClearWinner(null);
+            }
+          });
+        }
       } catch (error) {
         console.error('Socket initialization error:', error)
       }
     }
 
+    console.log('initializing socket')
     initializeSocket()
 
     return () => {
@@ -313,14 +316,7 @@ export default function GameRoom() {
         setIsConnected(false)
       }
     }
-  }, [])
-
-  // Add join game handler
-  const handleJoinGame = () => {
-    if (socketRef.current && roomId) {
-      socketRef.current.emit('joinGame', roomId)
-    }
-  };
+  }, []) // Empty dependency array
 
   // Get cell color based on neighbor count
   const getNumberColor = (count) => {
@@ -336,6 +332,11 @@ export default function GameRoom() {
     ];
     return colors[count - 1] || colors[0];
   };
+
+    useEffect(() => {
+      console.log('player1Cells', JSON.stringify(playerStates.player1))
+      console.log('player2Cells', JSON.stringify(playerStates.player2))
+    }, [JSON.stringify(playerStates)])
 
   // Add this component for the score display
   const ScoreBoard = () => {
@@ -370,14 +371,14 @@ export default function GameRoom() {
           <div 
             className="h-full bg-blue-600 transition-all duration-300"
             style={{ 
-              width: `${player1Percentage}%`,
+              width: `${playerId === 'player1' ? player1Percentage : 100 - player1Percentage}%`,
               borderRight: totalClearedCells > 0 ? '2px solid white' : 'none'
             }}
           />
         </div>
         <div className="flex justify-between mt-2 text-sm">
-          <span className="text-blue-600">Player 1</span>
-          <span className="text-red-600">Player 2</span>
+          <span className="text-blue-600">{playerId === 'player1' ? 'Player 1' : 'Player 2'}</span>
+          <span className="text-red-600">{playerId === 'player1' ? 'Player 2' : 'Player 1'}</span>
         </div>
         {gameOver && (
           <div className="text-center mt-2 font-bold">
@@ -406,25 +407,14 @@ export default function GameRoom() {
     <Card className="p-4 w-fit">
       <div className="mb-4 flex justify-between items-center">
         <div className="flex gap-2">
-          {waitingForPlayer && !playerId ? (
-            <Button
-              variant="outline"
-              onClick={handleJoinGame}
-              className="flex items-center gap-2"
-              disabled={!isConnected}
-            >
-              Join Game
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Reset
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={handleReset}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reset
+          </Button>
           <span className="flex items-center gap-2">
             <Flag className="w-4 h-4" />
             Flags: {flagsLeft}
