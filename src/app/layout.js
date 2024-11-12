@@ -24,6 +24,16 @@ export default function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <footer className="fixed bottom-0 w-full p-1 text-center bg-gray-50">
+          <a
+            href="https://github.com/J3698/mines"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-800 underline"
+          >
+            GitHub
+          </a>
+        </footer>
       </body>
     </html>
   );
