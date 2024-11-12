@@ -4,9 +4,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Install nvm
 
-activade some version of node
+activate some version of node
 
 Install dependencies from root directory of project
+
+```bash
+npm install .
+```
+
 
 run the development server:
 
